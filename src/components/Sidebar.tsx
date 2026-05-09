@@ -29,6 +29,16 @@ export const Sidebar = () => {
           <Users size={20} />
           Pacientes
         </NavLink>
+        
+        {/* Mobile-only menu items */}
+        <button onClick={toggleTheme} className="nav-item mobile-only" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+          {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          Tema
+        </button>
+        <button onClick={signOut} className="nav-item mobile-only" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--error)' }}>
+          <LogOut size={20} />
+          Sair
+        </button>
       </nav>
 
       <div className="sidebar-footer">
