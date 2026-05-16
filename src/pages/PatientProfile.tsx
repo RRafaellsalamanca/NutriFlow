@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, User, Activity, FileText, Save, Plus, 
   Calendar, Clipboard, TrendingUp, CheckCircle, AlertCircle, 
-  Clock, ChevronRight, X, Loader2, Sparkles, Trash2, Edit2
+  Clock, ChevronRight, X, Loader2, Sparkles
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { 
