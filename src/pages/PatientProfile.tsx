@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, User, Activity, FileText, Save, Plus, 
   Calendar, Clipboard, TrendingUp, CheckCircle, AlertCircle, 
-  Clock, ChevronRight, X
+  Clock, ChevronRight, X, Loader2, Sparkles, Trash2, Edit2
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { 
@@ -45,6 +45,11 @@ export const PatientProfile = () => {
     observacoes: '',
     proximo_retorno: ''
   });
+
+  // AI Meal Plan States
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState<any>(null);
+  const [viewingPlan, setViewingPlan] = useState<any>(null);
 
   useEffect(() => {
     fetchPatientData();
@@ -177,6 +182,76 @@ export const PatientProfile = () => {
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handleGeneratePlan = async () => {
+    setIsGenerating(true);
+    setError(null);
+    setGeneratedPlan(null);
+    setViewingPlan(null);
+
+    try {
+      const response = await fetch('/api/gerar-plano', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientData: patient })
+      });
+
+      if (!response.ok) {
+        // Tenta ler o erro como JSON, se falhar, usa um texto padrão
+        let errorMessage = 'Erro ao conectar com o serviço de IA.';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          if (response.status === 404) {
+            errorMessage = 'Serviço de IA não encontrado localmente. Esta função requer deploy na Vercel para funcionar.';
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      setGeneratedPlan(data.plano_semanal);
+      setSuccess('Plano gerado com sucesso! Você pode editá-lo antes de salvar.');
+      setTimeout(() => setSuccess(null), 5000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSavePlan = async () => {
+    if (!generatedPlan) return;
+    setUpdating(true);
+    setError(null);
+
+    try {
+      const { error: plError } = await supabase
+        .from('planos_alimentares')
+        .insert([{
+          paciente_id: id,
+          conteudo: { plano_semanal: generatedPlan }
+        }]);
+
+      if (plError) throw plError;
+
+      setSuccess('Plano alimentar salvo com sucesso!');
+      setGeneratedPlan(null);
+      fetchPatientData(); // Refresh history
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleOptionChange = (dayIndex: number, mealKey: string, optionIndex: number, value: string) => {
+    const updatedPlan = [...generatedPlan];
+    updatedPlan[dayIndex].refeicoes[mealKey][optionIndex] = value;
+    setGeneratedPlan(updatedPlan);
   };
 
   // Chart Data Preparation
@@ -531,39 +606,148 @@ export const PatientProfile = () => {
 
       {/* SECTION 3: PLANOS ALIMENTARES */}
       {activeSection === 'planos' && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-            <h3 className="section-title" style={{ marginBottom: 0 }}>
-              <FileText size={20} className="text-info" />
-              Planos Alimentares
-            </h3>
-            <button className="btn btn-primary" style={{ width: 'auto' }} disabled>
-              Gerar Plano Alimentar
-            </button>
-          </div>
+        <div style={{ display: 'grid', gap: '2rem' }}>
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <h3 className="section-title" style={{ marginBottom: 0 }}>
+                <FileText size={20} className="text-info" />
+                Planos Alimentares
+              </h3>
+              {!generatedPlan && !viewingPlan && (
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: 'auto' }} 
+                  onClick={handleGeneratePlan}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Gerando Plano...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={20} />
+                      Gerar Plano com IA
+                    </>
+                  )}
+                </button>
+              )}
+              {generatedPlan && (
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button className="btn" style={{ width: 'auto' }} onClick={() => setGeneratedPlan(null)}>
+                    Cancelar
+                  </button>
+                  <button className="btn btn-primary" style={{ width: 'auto' }} onClick={handleSavePlan} disabled={updating}>
+                    <Save size={20} />
+                    {updating ? 'Salvando...' : 'Salvar Plano'}
+                  </button>
+                </div>
+              )}
+              {viewingPlan && (
+                <button className="btn" style={{ width: 'auto' }} onClick={() => setViewingPlan(null)}>
+                  Voltar ao Histórico
+                </button>
+              )}
+            </div>
 
-          <div className="history-list">
-            {plans.length > 0 ? (
-              plans.map(p => (
-                <div key={p.id} className="history-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div className="icon-box-info">
-                      <Clipboard size={20} />
-                    </div>
-                    <div>
-                      <span style={{ fontWeight: 700 }}>Plano Gerado</span>
-                      <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                        {new Date(p.created_at).toLocaleDateString('pt-BR')} às {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+            {isGenerating && (
+              <div className="empty-state" style={{ padding: '4rem 0' }}>
+                <Loader2 size={48} className="animate-spin text-primary" style={{ marginBottom: '1.5rem' }} />
+                <h4 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem' }}>Criando Plano Personalizado</h4>
+                <p className="text-muted">Analisando dados do paciente e consultando a IA...</p>
+              </div>
+            )}
+
+            {/* Generated Plan Editor */}
+            {generatedPlan && (
+              <div style={{ display: 'grid', gap: '2rem' }}>
+                {generatedPlan.map((day: any, dIdx: number) => (
+                  <div key={dIdx} className="day-plan-card">
+                    <h4 className="day-title">{day.dia}</h4>
+                    <div className="meals-grid">
+                      {Object.entries(day.refeicoes).map(([mealKey, options]: [string, any]) => (
+                        <div key={mealKey} className="meal-section">
+                          <label className="meal-label">
+                            {mealKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </label>
+                          <div className="options-list">
+                            {options.map((opt: string, oIdx: number) => (
+                              <input 
+                                key={oIdx}
+                                className="meal-option-input"
+                                value={opt}
+                                onChange={(e) => handleOptionChange(dIdx, mealKey, oIdx, e.target.value)}
+                                placeholder={`Opção ${oIdx + 1}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <ChevronRight size={20} className="text-muted" />
+                ))}
+              </div>
+            )}
+
+            {/* Viewing Saved Plan */}
+            {viewingPlan && (
+              <div style={{ display: 'grid', gap: '2rem' }}>
+                <div className="badge" style={{ padding: '1rem', background: 'var(--surface-active)', textAlign: 'center' }}>
+                  Visualizando plano salvo em {new Date(viewingPlan.created_at).toLocaleDateString('pt-BR')}
                 </div>
-              ))
-            ) : (
-              <div className="empty-state">
-                <FileText size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
-                <p>Nenhum plano alimentar gerado ainda.</p>
+                {viewingPlan.conteudo.plano_semanal.map((day: any, dIdx: number) => (
+                  <div key={dIdx} className="day-plan-card">
+                    <h4 className="day-title">{day.dia}</h4>
+                    <div className="meals-grid">
+                      {Object.entries(day.refeicoes).map(([mealKey, options]: [string, any]) => (
+                        <div key={mealKey} className="meal-section">
+                          <label className="meal-label">
+                            {mealKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </label>
+                          <ul className="options-display-list">
+                            {options.map((opt: string, oIdx: number) => (
+                              <li key={oIdx}>{opt}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!isGenerating && !generatedPlan && !viewingPlan && (
+              <div className="history-list">
+                {plans.length > 0 ? (
+                  plans.map(p => (
+                    <div 
+                      key={p.id} 
+                      className="history-card" 
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                      onClick={() => setViewingPlan(p)}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div className="icon-box-info">
+                          <Clipboard size={20} />
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 700 }}>Plano Alimentar Semanal</span>
+                          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                            {new Date(p.created_at).toLocaleDateString('pt-BR')} às {new Date(p.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight size={20} className="text-muted" />
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    <FileText size={48} style={{ marginBottom: '1rem', opacity: 0.2 }} />
+                    <p>Nenhum plano alimentar gerado ainda.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
